@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PORTAL GOV</title>
+
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:Roboto,sans-serif;
+  background:linear-gradient(180deg,#0a7a3d,#f4c430);
+  display:flex;
+  justify-content:center;
+  color:#111
+}
+.app{
+  width:100%;
+  max-width:430px;
+  padding:14px;
+  border:4px solid #0a7a3d;
+  border-radius:22px;
+}
+.card{
+  background:#fff;
+  border-radius:22px;
+  padding:16px;
+  box-shadow:0 20px 50px rgba(0,0,0,.4)
+}
+h1,h2,h3{text-align:center;margin:6px 0;color:#0a7a3d}
+button,input{
+  width:100%;
+  padding:12px;
+  margin:6px 0;
+  border-radius:12px;
+  border:1px solid #ccc;
+  font-size:14px
+}
+button{
+  background:linear-gradient(135deg,#0a7a3d,#f4c430);
+  color:#fff;
+  font-weight:700;
+  cursor:pointer
+}
+.red{background:#e74c3c}
+.gray{background:#ddd;color:#222}
+.box{
+  background:#f7fdf9;
+  border-radius:14px;
+  padding:12px;
+  margin:10px 0
+}
+.hidden{display:none}
+.valor{
+  font-size:22px;
+  font-weight:700;
+  color:#e60000;
+  animation:piscar 1s infinite
+}
+.dado{
+  color:#e60000;
+  animation:piscar 1.2s infinite
+}
+@keyframes piscar{
+  0%{opacity:1}
+  50%{opacity:.3}
+  100%{opacity:1}
+}
+</style>
+</head>
+
+<body>
+<div class="app">
+<div class="card">
+
+<!-- HOME -->
+<div id="home">
+<h1>PORTAL TRANSPARENTE</h1>
+<button id="btnAcessar">🔐 Acessar</button>
+</div>
+
+<!-- LOGIN -->
+<div id="login" class="hidden">
+<h2>Login Governamental</h2>
+<input id="luser" placeholder="Login">
+<input id="lpass" type="password" placeholder="Senha">
+<button id="btnEntrar">Entrar</button>
+<button class="gray" id="btnVoltar">Voltar</button>
+<p id="msg"></p>
+</div>
+
+<!-- PAINEL -->
+<div id="painel" class="hidden">
+<h2 id="titulo"></h2>
+
+<div class="box">
+Saldo disponível:<br>
+<span id="saldo" class="valor"></span><br>
+Bloqueado: R$ <span id="bloq"></span>
+</div>
+
+<div class="box">
+<h3>📈 INDICADORES</h3>
+<div id="indicadores"></div>
+<button id="btnEditIndicadores" class="hidden">✏️ Editar Indicadores</button>
+<button id="btnCriarIndicador" class="hidden">➕ Criar Indicador</button>
+</div>
+
+<div class="box hidden" id="boxAdmin">
+<h3>👑 Administração</h3>
+<button id="btnCriarConta">➕ Criar Conta</button>
+<button id="btnApagarConta">🗑 Apagar Conta</button>
+<div id="listaContas"></div>
+</div>
+
+<button id="btnNBDados">🔐 NB DADOS</button>
+<button class="red" id="btnSair">🚪 Sair</button>
+
+</div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.2.0/firebase-app.js";
+import { getDatabase, ref, set, get, onValue, push } from "https://www.gstatic.com/firebasejs/10.2.0/firebase-database.js";
+
+/* FIREBASE */
+const firebaseConfig = {
+  apiKey: "AIzaSyAE-c6y2Z1JsQplCfj1UNW7Wyr4ssCsJQU",
+  authDomain: "tse-painel.firebaseapp.com",
+  databaseURL: "https://tse-painel-default-rtdb.firebaseio.com",
+  projectId: "tse-painel",
+  storageBucket: "tse-painel.firebasestorage.app",
+  messagingSenderId: "818733405394",
+  appId: "1:818733405394:web:8e3e3e45062e3122e9490b"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+/* CONFIG */
+const FUNDADOR_LOGIN="FUNDADOR";
+const FUNDADOR_SENHA="2007";
+
+function tela(id){
+  ["home","login","painel"].forEach(t=>document.getElementById(t).classList.add("hidden"));
+  document.getElementById(id).classList.remove("hidden");
+}
+function formatar(v){
+  return v.toLocaleString("pt-BR",{minimumFractionDigits:2});
+}
+
+/* INIT */
+async function init(){
+  const snap = await get(ref(db,"contas"));
+  let contas = snap.val() || [];
+  if(!Array.isArray(contas)) contas = Object.values(contas);
+
+  if(!contas.find(c=>c.login===FUNDADOR_LOGIN)){
+    contas.push({
+      login:FUNDADOR_LOGIN,
+      senha:FUNDADOR_SENHA,
+      tipo:"Fundador",
+      saldo:1000000000,
+      bloq:0
+    });
+    await set(ref(db,"contas"),contas);
+  }
+}
+init();
+
+/* LOGIN */
+document.getElementById("btnEntrar").onclick = async ()=>{
+  const l=luser.value.trim(), p=lpass.value.trim();
+  const snap=await get(ref(db,"contas"));
+  let contas=snap.val()||[];
+  if(!Array.isArray(contas)) contas=Object.values(contas);
+  const u=contas.find(c=>c.login===l && c.senha===p);
+  if(!u){msg.innerText="Acesso negado";return;}
+  localStorage.setItem("user",u.login);
+  carregar();
+};
+
+/* PAINEL */
+function carregar(){
+  const login=localStorage.getItem("user");
+  tela("painel");
+
+  onValue(ref(db,"contas"),snap=>{
+    let contas=snap.val()||[];
+    if(!Array.isArray(contas)) contas=Object.values(contas);
+    const u=contas.find(c=>c.login===login);
+    if(!u) return;
+
+    titulo.innerText=u.tipo+" – "+u.login;
+    saldo.innerText="R$ "+formatar(u.saldo);
+    bloq.innerText=formatar(u.bloq);
+    boxAdmin.classList.toggle("hidden",u.tipo!=="Fundador");
+
+    carregarIndicadores(login);
+    listarContas();
+  });
+}
+
+/* INDICADORES */
+function carregarIndicadores(login){
+  const el=document.getElementById("indicadores");
+  onValue(ref(db,`indicadoresPorConta/${login}`),snap=>{
+    el.innerHTML="";
+    const dados=snap.val()||{};
+    for(const id in dados){
+      el.innerHTML+=`${dados[id].nome}: <span class="dado">${dados[id].valor}</span><br>`;
+    }
+  });
+}
+
+/* NB DADOS */
+btnNBDados.onclick=()=>{
+  const s=prompt("Senha NB DADOS:");
+  if(s!==FUNDADOR_SENHA) return alert("Senha inválida");
+
+  btnCriarIndicador.classList.remove("hidden");
+  btnEditIndicadores.classList.remove("hidden");
+
+  btnCriarIndicador.onclick=async()=>{
+    const login=localStorage.getItem("user");
+    const nome=prompt("Nome do indicador:");
+    const valor=prompt("Valor:");
+    if(!nome||valor===null) return;
+
+    const novo=push(ref(db,`indicadoresPorConta/${login}`));
+    await set(novo,{nome,valor});
+  };
+
+  btnEditIndicadores.onclick=async()=>{
+    const login=localStorage.getItem("user");
+    const refInd=ref(db,`indicadoresPorConta/${login}`);
+    const snap=await get(refInd);
+    const dados=snap.val()||{};
+    for(const id in dados){
+      const novo=prompt(
+        `Indicador: ${dados[id].nome}`,
+        dados[id].valor
+      );
+      if(novo!==null) dados[id].valor=novo;
+    }
+    await set(refInd,dados);
+  };
+};
+
+/* CONTAS */
+async function listarContas(){
+  const snap=await get(ref(db,"contas"));
+  let contas=snap.val()||[];
+  if(!Array.isArray(contas)) contas=Object.values(contas);
+  listaContas.innerHTML="<b>Contas:</b><br>";
+  contas.forEach(c=>{
+    listaContas.innerHTML+=`${c.login} (${c.tipo})<br>`;
+  });
+}
+
+btnCriarConta.onclick=async()=>{
+  const l=prompt("Login:"), s=prompt("Senha:");
+  if(!l||!s) return;
+  const snap=await get(ref(db,"contas"));
+  let contas=snap.val()||[];
+  if(!Array.isArray(contas)) contas=Object.values(contas);
+  contas.push({login:l,senha:s,tipo:"Conta",saldo:0,bloq:0});
+  await set(ref(db,"contas"),contas);
+};
+
+btnApagarConta.onclick=async()=>{
+  const l=prompt("Login:");
+  const snap=await get(ref(db,"contas"));
+  let contas=snap.val()||[];
+  if(!Array.isArray(contas)) contas=Object.values(contas);
+  contas=contas.filter(c=>c.login!==l);
+  await set(ref(db,"contas"),contas);
+};
+
+/* EVENTOS */
+btnAcessar.onclick=()=>tela("login");
+btnVoltar.onclick=()=>tela("home");
+btnSair.onclick=()=>{localStorage.clear();tela("home");};
+</script>
+
+</body>
+</html>
