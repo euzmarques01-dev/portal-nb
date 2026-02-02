@@ -28,6 +28,11 @@ body{
   padding:16px;
   box-shadow:0 20px 50px rgba(0,0,0,.4)
 }
+.logoPainel{
+  width:140px;
+  display:block;
+  margin:0 auto 10px auto
+}
 h1,h2,h3{text-align:center;margin:6px 0;color:#0a7a3d}
 button,input{
   width:100%;
@@ -92,6 +97,9 @@ button{
 
 <!-- PAINEL -->
 <div id="painel" class="hidden">
+
+<img class="logoPainel" src="https://upload.wikimedia.org/wikipedia/commons/1/1b/Brasao_oficial_da_Republica_Federativa_do_Brasil.svg">
+
 <h2 id="titulo"></h2>
 
 <div class="box">
@@ -109,6 +117,13 @@ Bloqueado: R$ <span id="bloq"></span>
 
 <div class="box hidden" id="boxAdmin">
 <h3>👑 Administração</h3>
+
+<button id="btnDefinirSenhaNB">🔐 Definir senha NB DADOS</button>
+<button id="btnBloquearNB" class="red">⛔ Bloquear NB DADOS</button>
+<button id="btnLiberarNB" class="green">✅ Liberar NB DADOS</button>
+
+<hr>
+
 <button id="btnCriarConta">➕ Criar Conta</button>
 <button id="btnApagarConta">🗑 Apagar Conta</button>
 <div id="listaContas"></div>
@@ -138,10 +153,10 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-/* CONFIG */
 const FUNDADOR_LOGIN="FUNDADOR";
 const FUNDADOR_SENHA="2007";
 
+/* TELA */
 function tela(id){
   ["home","login","painel"].forEach(t=>document.getElementById(t).classList.add("hidden"));
   document.getElementById(id).classList.remove("hidden");
@@ -166,11 +181,19 @@ async function init(){
     });
     await set(ref(db,"contas"),contas);
   }
+
+  const nbSnap = await get(ref(db,"config/nbDados"));
+  if(!nbSnap.exists()){
+    await set(ref(db,"config/nbDados"),{
+      senha:"1234",
+      ativo:true
+    });
+  }
 }
 init();
 
 /* LOGIN */
-document.getElementById("btnEntrar").onclick = async ()=>{
+btnEntrar.onclick = async ()=>{
   const l=luser.value.trim(), p=lpass.value.trim();
   const snap=await get(ref(db,"contas"));
   let contas=snap.val()||[];
@@ -204,48 +227,44 @@ function carregar(){
 
 /* INDICADORES */
 function carregarIndicadores(login){
-  const el=document.getElementById("indicadores");
   onValue(ref(db,`indicadoresPorConta/${login}`),snap=>{
-    el.innerHTML="";
+    indicadores.innerHTML="";
     const dados=snap.val()||{};
     for(const id in dados){
-      el.innerHTML+=`${dados[id].nome}: <span class="dado">${dados[id].valor}</span><br>`;
+      indicadores.innerHTML+=`${dados[id].nome}: <span class="dado">${dados[id].valor}</span><br>`;
     }
   });
 }
 
 /* NB DADOS */
-btnNBDados.onclick=()=>{
-  const s=prompt("Senha NB DADOS:");
-  if(s!==FUNDADOR_SENHA) return alert("Senha inválida");
+btnNBDados.onclick = async ()=>{
+  const senha = prompt("Senha NB DADOS:");
+  const snap = await get(ref(db,"config/nbDados"));
+  const cfg = snap.val();
+
+  if(!cfg.ativo) return alert("NB DADOS BLOQUEADO PELO FUNDADOR");
+  if(senha !== cfg.senha) return alert("Senha inválida");
 
   btnCriarIndicador.classList.remove("hidden");
   btnEditIndicadores.classList.remove("hidden");
+};
 
-  btnCriarIndicador.onclick=async()=>{
-    const login=localStorage.getItem("user");
-    const nome=prompt("Nome do indicador:");
-    const valor=prompt("Valor:");
-    if(!nome||valor===null) return;
+/* FUNDADOR - NB */
+btnDefinirSenhaNB.onclick = async ()=>{
+  const nova = prompt("Nova senha NB DADOS:");
+  if(!nova) return;
+  await set(ref(db,"config/nbDados/senha"),nova);
+  alert("Senha NB DADOS alterada");
+};
 
-    const novo=push(ref(db,`indicadoresPorConta/${login}`));
-    await set(novo,{nome,valor});
-  };
+btnBloquearNB.onclick = async ()=>{
+  await set(ref(db,"config/nbDados/ativo"),false);
+  alert("NB DADOS BLOQUEADO");
+};
 
-  btnEditIndicadores.onclick=async()=>{
-    const login=localStorage.getItem("user");
-    const refInd=ref(db,`indicadoresPorConta/${login}`);
-    const snap=await get(refInd);
-    const dados=snap.val()||{};
-    for(const id in dados){
-      const novo=prompt(
-        `Indicador: ${dados[id].nome}`,
-        dados[id].valor
-      );
-      if(novo!==null) dados[id].valor=novo;
-    }
-    await set(refInd,dados);
-  };
+btnLiberarNB.onclick = async ()=>{
+  await set(ref(db,"config/nbDados/ativo"),true);
+  alert("NB DADOS LIBERADO");
 };
 
 /* CONTAS */
@@ -283,6 +302,5 @@ btnAcessar.onclick=()=>tela("login");
 btnVoltar.onclick=()=>tela("home");
 btnSair.onclick=()=>{localStorage.clear();tela("home");};
 </script>
-
 </body>
 </html>
